@@ -670,7 +670,7 @@
             manager={timelineManager}
             onDayGroupSelect={handleGroupSelect}
           >
-            {#snippet thumbnail({ asset, position, dayGroup, groupIndex })}
+            {#snippet thumbnail({ asset, position, dayGroup, groupIndex, isInViewport })}
               {@const isAssetSelectionCandidate = assetInteraction.hasSelectionCandidate(asset.id)}
               {@const isAssetSelected =
                 assetInteraction.hasSelectedAsset(asset.id) || timelineManager.albumAssets.has(asset.id)}
@@ -681,6 +681,7 @@
                 {asset}
                 {albumUsers}
                 {groupIndex}
+                {isInViewport}
                 onClick={(asset) => {
                   if (typeof onThumbnailClick === 'function') {
                     onThumbnailClick(asset, timelineManager, dayGroup, _onClick);

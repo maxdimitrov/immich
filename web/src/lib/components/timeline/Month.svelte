@@ -21,6 +21,7 @@
           position: CommonPosition;
           dayGroup: DayGroup;
           groupIndex: number;
+          isInViewport: boolean;
         },
       ]
     >;
@@ -104,8 +105,8 @@
       width={dayGroup.width}
       {customThumbnailLayout}
     >
-      {#snippet thumbnail({ asset, position })}
-        {@render thumbnailWithGroup({ asset, position, dayGroup, groupIndex })}
+      {#snippet thumbnail({ asset, position, isInViewport })}
+        {@render thumbnailWithGroup({ asset, position, dayGroup, groupIndex, isInViewport })}
       {/snippet}
     </AssetLayout>
   </section>
