@@ -1,8 +1,9 @@
 import { Injectable } from '@nestjs/common';
-import { Kysely, sql } from 'kysely';
+import { Kysely, NotNull, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
 import { columns } from 'src/database';
 import { DummyValue, GenerateSql } from 'src/decorators';
+import { AlbumUserRole } from 'src/enum';
 import { DB } from 'src/schema';
 import { SyncAck } from 'src/types';
 
@@ -171,10 +172,9 @@ class AlbumSync extends BaseSync {
     return this.upsertQuery('album', options)
       .distinctOn(['album.id', 'album.updateId'])
       .leftJoin('album_user as album_users', 'album.id', 'album_users.albumId')
-      .where((eb) => eb.or([eb('album.ownerId', '=', userId), eb('album_users.userId', '=', userId)]))
+      .where('album_users.userId', '=', userId)
       .select([
         'album.id',
-        'album.ownerId',
         'album.albumName as name',
         'album.description',
         'album.createdAt',
@@ -184,6 +184,16 @@ class AlbumSync extends BaseSync {
         'album.order',
         'album.updateId',
       ])
+      .select((qb) =>
+        qb
+          .selectFrom('album_user')
+          .select('album_user.userId as ownerId')
+          .whereRef('album_user.albumId', '=', 'album.id')
+          .where('album_user.role', '=', sql.lit(AlbumUserRole.Owner))
+          .limit(1)
+          .as('ownerId'),
+      )
+      .$narrowType<{ ownerId: NotNull }>()
       .stream();
   }
 }
@@ -207,9 +217,8 @@ class AlbumAssetSync extends BaseSync {
       .select(columns.syncAsset)
       .select('asset.updateId')
       .where('album_asset.updateId', '<=', albumToAssetAck.updateId) // Ensure we only send updates for assets that the client already knows about
-      .innerJoin('album', 'album.id', 'album_asset.albumId')
-      .leftJoin('album_user', 'album_user.albumId', 'album_asset.albumId')
-      .where((eb) => eb.or([eb('album.ownerId', '=', userId), eb('album_user.userId', '=', userId)]))
+      .innerJoin('album_user', 'album_user.albumId', 'album_asset.albumId')
+      .where('album_user.userId', '=', userId)
       .stream();
   }
 
@@ -220,9 +229,8 @@ class AlbumAssetSync extends BaseSync {
       .select('album_asset.updateId')
       .innerJoin('asset', 'asset.id', 'album_asset.assetId')
       .select(columns.syncAsset)
-      .innerJoin('album', 'album.id', 'album_asset.albumId')
-      .leftJoin('album_user', 'album_user.albumId', 'album_asset.albumId')
-      .where((eb) => eb.or([eb('album.ownerId', '=', userId), eb('album_user.userId', '=', userId)]))
+      .innerJoin('album_user', 'album_user.albumId', 'album_asset.albumId')
+      .where('album_user.userId', '=', userId)
       .stream();
   }
 }
@@ -246,9 +254,8 @@ class AlbumAssetExifSync extends BaseSync {
       .select(columns.syncAssetExif)
       .select('asset_exif.updateId')
       .where('album_asset.updateId', '<=', albumToAssetAck.updateId) // Ensure we only send exif updates for assets that the client already knows about
-      .innerJoin('album', 'album.id', 'album_asset.albumId')
-      .leftJoin('album_user', 'album_user.albumId', 'album_asset.albumId')
-      .where((eb) => eb.or([eb('album.ownerId', '=', userId), eb('album_user.userId', '=', userId)]))
+      .innerJoin('album_user', 'album_user.albumId', 'album_asset.albumId')
+      .where('album_user.userId', '=', userId)
       .stream();
   }
 
@@ -261,7 +268,7 @@ class AlbumAssetExifSync extends BaseSync {
       .select(columns.syncAssetExif)
       .innerJoin('album', 'album.id', 'album_asset.albumId')
       .leftJoin('album_user', 'album_user.albumId', 'album_asset.albumId')
-      .where((eb) => eb.or([eb('album.ownerId', '=', userId), eb('album_user.userId', '=', userId)]))
+      .where('album_user.userId', '=', userId)
       .stream();
   }
 }
@@ -284,18 +291,7 @@ class AlbumToAssetSync extends BaseSync {
         eb(
           'albumId',
           'in',
-          eb
-            .selectFrom('album')
-            .select(['id'])
-            .where('ownerId', '=', userId)
-            .union((eb) =>
-              eb.parens(
-                eb
-                  .selectFrom('album_user')
-                  .select(['album_user.albumId as id'])
-                  .where('album_user.userId', '=', userId),
-              ),
-            ),
+          eb.selectFrom('album_user').select(['album_user.albumId as id']).where('album_user.userId', '=', userId),
         ),
       )
       .stream();
@@ -310,9 +306,8 @@ class AlbumToAssetSync extends BaseSync {
     const userId = options.userId;
     return this.upsertQuery('album_asset', options)
       .select(['album_asset.assetId as assetId', 'album_asset.albumId as albumId', 'album_asset.updateId'])
-      .innerJoin('album', 'album.id', 'album_asset.albumId')
-      .leftJoin('album_user', 'album_user.albumId', 'album_asset.albumId')
-      .where((eb) => eb.or([eb('album.ownerId', '=', userId), eb('album_user.userId', '=', userId)]))
+      .innerJoin('album_user', 'album_user.albumId', 'album_asset.albumId')
+      .where('album_user.userId', '=', userId)
       .stream();
   }
 }
@@ -336,18 +331,7 @@ class AlbumUserSync extends BaseSync {
         eb(
           'albumId',
           'in',
-          eb
-            .selectFrom('album')
-            .select(['id'])
-            .where('ownerId', '=', userId)
-            .union((eb) =>
-              eb.parens(
-                eb
-                  .selectFrom('album_user')
-                  .select(['album_user.albumId as id'])
-                  .where('album_user.userId', '=', userId),
-              ),
-            ),
+          eb.selectFrom('album_user').select(['album_user.albumId as id']).where('album_user.userId', '=', userId),
         ),
       )
       .stream();
@@ -368,17 +352,9 @@ class AlbumUserSync extends BaseSync {
           'album_user.albumId',
           'in',
           eb
-            .selectFrom('album')
-            .select(['id'])
-            .where('ownerId', '=', userId)
-            .union((eb) =>
-              eb.parens(
-                eb
-                  .selectFrom('album_user as albumUsers')
-                  .select(['albumUsers.albumId as id'])
-                  .where('albumUsers.userId', '=', userId),
-              ),
-            ),
+            .selectFrom('album_user as albumUsers')
+            .select(['albumUsers.albumId as id'])
+            .where('albumUsers.userId', '=', userId),
         ),
       )
       .stream();

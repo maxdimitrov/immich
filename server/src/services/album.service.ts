@@ -17,7 +17,7 @@ import {
 } from 'src/dtos/album.dto';
 import { BulkIdErrorReason, BulkIdResponseDto, BulkIdsDto } from 'src/dtos/asset-ids.response.dto';
 import { AuthDto } from 'src/dtos/auth.dto';
-import { Permission } from 'src/enum';
+import { AlbumUserRole, Permission } from 'src/enum';
 import { AlbumAssetCount, AlbumInfoOptions } from 'src/repositories/album.repository';
 import { BaseService } from 'src/services/base.service';
 import { addAssets, removeAssets } from 'src/utils/asset.util';
@@ -107,6 +107,7 @@ export class AlbumService extends BaseService {
         throw new BadRequestException('Cannot share album with owner');
       }
     }
+    albumUsers.unshift({ userId: auth.user.id, role: AlbumUserRole.Owner });
 
     const allowedAssetIdsSet = await this.checkAccess({
       auth,
@@ -119,7 +120,6 @@ export class AlbumService extends BaseService {
 
     const album = await this.albumRepository.create(
       {
-        ownerId: auth.user.id,
         albumName: dto.albumName,
         description: dto.description,
         albumThumbnailAssetId: assetIds[0] || null,

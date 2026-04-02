@@ -119,19 +119,6 @@ export const asset_delete_audit = registerFunction({
     END`,
 });
 
-export const album_delete_audit = registerFunction({
-  name: 'album_delete_audit',
-  returnType: 'TRIGGER',
-  language: 'PLPGSQL',
-  body: `
-    BEGIN
-      INSERT INTO album_audit ("albumId", "userId")
-      SELECT "id", "ownerId"
-      FROM OLD;
-      RETURN NULL;
-    END`,
-});
-
 export const album_asset_delete_audit = registerFunction({
   name: 'album_asset_delete_audit',
   returnType: 'TRIGGER',

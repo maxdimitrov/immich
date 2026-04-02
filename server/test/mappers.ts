@@ -84,6 +84,7 @@ export const getForAlbum = (album: ReturnType<AlbumFactory['build']>) => ({
     createdAt: albumUser.createdAt.toISOString(),
     user: getDehydrated(albumUser.user),
   })),
+  ownerId: album.owner.id,
   owner: getDehydrated(album.owner),
   sharedLinks: album.sharedLinks.map((sharedLink) => getDehydrated(sharedLink)),
 });
@@ -221,6 +222,7 @@ export const getForSharedLink = (sharedLink: ReturnType<SharedLinkFactory['build
   album: sharedLink.album
     ? {
         ...getDehydrated(sharedLink.album),
+        ownerId: sharedLink.album.owner.id,
         owner: getDehydrated(sharedLink.album.owner),
         assets: sharedLink.album.assets.map((asset) => getDehydrated(asset)),
       }

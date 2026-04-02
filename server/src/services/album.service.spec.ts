@@ -174,14 +174,16 @@ describe(AlbumService.name, () => {
 
       expect(mocks.album.create).toHaveBeenCalledWith(
         {
-          ownerId: album.owner.id,
           albumName: 'test',
           description: 'description',
           order: album.order,
           albumThumbnailAssetId: assetId,
         },
         [assetId],
-        [{ userId: albumUser.userId, role: AlbumUserRole.Editor }],
+        [
+          { userId: album.owner.id, role: AlbumUserRole.Owner },
+          { userId: albumUser.userId, role: AlbumUserRole.Editor },
+        ],
       );
 
       expect(mocks.user.get).toHaveBeenCalledWith(albumUser.userId, {});
@@ -198,7 +200,8 @@ describe(AlbumService.name, () => {
         .albumUser(albumUser)
         .build();
       mocks.album.create.mockResolvedValue(getForAlbum(album));
-      mocks.user.get.mockResolvedValue(album.albumUsers[0].user);
+      mocks.albumUser.create.mockResolvedValue(album.albumUsers[0]);
+      mocks.user.get.mockResolvedValue(UserFactory.create(album.albumUsers[1].user));
       mocks.user.getMetadata.mockResolvedValue([
         {
           key: UserMetadataKey.Preferences,
@@ -220,14 +223,13 @@ describe(AlbumService.name, () => {
 
       expect(mocks.album.create).toHaveBeenCalledWith(
         {
-          ownerId: album.owner.id,
           albumName: album.albumName,
           description: album.description,
           order: 'asc',
           albumThumbnailAssetId: assetId,
         },
         [assetId],
-        [albumUser],
+        [{ userId: album.owner.id, role: AlbumUserRole.Owner }, albumUser],
       );
 
       expect(mocks.user.get).toHaveBeenCalledWith(albumUser.userId, {});
@@ -267,14 +269,13 @@ describe(AlbumService.name, () => {
 
       expect(mocks.album.create).toHaveBeenCalledWith(
         {
-          ownerId: album.owner.id,
           albumName: album.albumName,
           description: album.description,
           order: 'desc',
           albumThumbnailAssetId: assetId,
         },
         [assetId],
-        [],
+        [{ userId: album.owner.id, role: AlbumUserRole.Owner }],
       );
       expect(mocks.access.asset.checkOwnerAccess).toHaveBeenCalledWith(
         album.owner.id,
@@ -631,7 +632,7 @@ describe(AlbumService.name, () => {
   describe('addAssets', () => {
     it('should allow the owner to add assets', async () => {
       const owner = UserFactory.create({ isAdmin: true });
-      const album = AlbumFactory.from({ ownerId: owner.id }).owner(owner).build();
+      const album = AlbumFactory.from().owner(owner).build();
       const [asset1, asset2, asset3] = [AssetFactory.create(), AssetFactory.create(), AssetFactory.create()];
       mocks.access.album.checkOwnerAccess.mockResolvedValue(new Set([album.id]));
       mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([asset1.id, asset2.id, asset3.id]));
@@ -699,7 +700,7 @@ describe(AlbumService.name, () => {
       expect(mocks.album.addAssetIds).toHaveBeenCalledWith(album.id, [asset1.id, asset2.id, asset3.id]);
       expect(mocks.event.emit).toHaveBeenCalledWith('AlbumUpdate', {
         id: album.id,
-        recipientId: album.ownerId,
+        recipientId: album.owner.id,
       });
     });
 
@@ -720,7 +721,7 @@ describe(AlbumService.name, () => {
     it('should allow a shared link user to add assets', async () => {
       const album = AlbumFactory.create();
       const [asset1, asset2, asset3] = [AssetFactory.create(), AssetFactory.create(), AssetFactory.create()];
-      const auth = AuthFactory.from(album.owner).sharedLink({ allowUpload: true, userId: album.ownerId }).build();
+      const auth = AuthFactory.from(album.owner).sharedLink({ allowUpload: true, userId: album.owner.id }).build();
       mocks.access.album.checkSharedLinkAccess.mockResolvedValue(new Set([album.id]));
       mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([asset1.id, asset2.id, asset3.id]));
       mocks.album.getById.mockResolvedValue(getForAlbum(album));
@@ -759,7 +760,7 @@ describe(AlbumService.name, () => {
         updatedAt: expect.any(Date),
         albumThumbnailAssetId: asset.id,
       });
-      expect(mocks.access.asset.checkPartnerAccess).toHaveBeenCalledWith(album.ownerId, new Set([asset.id]));
+      expect(mocks.access.asset.checkPartnerAccess).toHaveBeenCalledWith(album.owner.id, new Set([asset.id]));
     });
 
     it('should skip duplicate assets', async () => {
@@ -788,8 +789,8 @@ describe(AlbumService.name, () => {
         { success: false, id: asset.id, error: BulkIdErrorReason.NO_PERMISSION },
       ]);
 
-      expect(mocks.access.asset.checkOwnerAccess).toHaveBeenCalledWith(album.ownerId, new Set([asset.id]), false);
-      expect(mocks.access.asset.checkPartnerAccess).toHaveBeenCalledWith(album.ownerId, new Set([asset.id]));
+      expect(mocks.access.asset.checkOwnerAccess).toHaveBeenCalledWith(album.owner.id, new Set([asset.id]), false);
+      expect(mocks.access.asset.checkPartnerAccess).toHaveBeenCalledWith(album.owner.id, new Set([asset.id]));
     });
 
     it('should not allow unauthorized access to the album', async () => {
@@ -933,11 +934,11 @@ describe(AlbumService.name, () => {
       ]);
       expect(mocks.event.emit).toHaveBeenCalledWith('AlbumUpdate', {
         id: album1.id,
-        recipientId: album1.ownerId,
+        recipientId: album1.owner.id,
       });
       expect(mocks.event.emit).toHaveBeenCalledWith('AlbumUpdate', {
         id: album2.id,
-        recipientId: album2.ownerId,
+        recipientId: album2.owner.id,
       });
     });
 
@@ -1039,7 +1040,7 @@ describe(AlbumService.name, () => {
         { albumId: album2.id, assetId: asset3.id },
       ]);
       expect(mocks.access.asset.checkPartnerAccess).toHaveBeenCalledWith(
-        album1.ownerId,
+        album1.owner.id,
         new Set([asset1.id, asset2.id, asset3.id]),
       );
     });
@@ -1128,12 +1129,12 @@ describe(AlbumService.name, () => {
       expect(mocks.album.update).not.toHaveBeenCalled();
       expect(mocks.album.addAssetIds).not.toHaveBeenCalled();
       expect(mocks.access.asset.checkOwnerAccess).toHaveBeenCalledWith(
-        album1.ownerId,
+        album1.owner.id,
         new Set([asset1.id, asset2.id, asset3.id]),
         false,
       );
       expect(mocks.access.asset.checkPartnerAccess).toHaveBeenCalledWith(
-        album1.ownerId,
+        album1.owner.id,
         new Set([asset1.id, asset2.id, asset3.id]),
       );
     });

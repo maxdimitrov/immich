@@ -197,6 +197,7 @@ export type SharedLink = {
 };
 
 export type Album = Selectable<AlbumTable> & {
+  ownerId: string;
   owner: ShallowDehydrateObject<User>;
   assets: ShallowDehydrateObject<Selectable<AssetTable>>[];
 };

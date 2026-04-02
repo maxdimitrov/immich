@@ -15813,6 +15813,7 @@
         "description": "Album user role",
         "enum": [
           "editor",
+          "owner",
           "viewer"
         ],
         "type": "string"

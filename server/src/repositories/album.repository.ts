@@ -14,10 +14,11 @@ import { InjectKysely } from 'nestjs-kysely';
 import { columns } from 'src/database';
 import { Chunked, ChunkedArray, ChunkedSet, DummyValue, GenerateSql } from 'src/decorators';
 import { AlbumUserCreateDto } from 'src/dtos/album.dto';
+import { AlbumUserRole } from 'src/enum';
 import { DB } from 'src/schema';
 import { AlbumTable } from 'src/schema/tables/album.table';
 import { AssetExifTable } from 'src/schema/tables/asset-exif.table';
-import { withDefaultVisibility } from 'src/utils/database';
+import { isAlbumOwned, withDefaultVisibility } from 'src/utils/database';
 
 export interface AlbumAssetCount {
   albumId: string;
@@ -31,8 +32,26 @@ export interface AlbumInfoOptions {
   withAssets: boolean;
 }
 
+const withOwnerId = (eb: ExpressionBuilder<DB, 'album'>) => {
+  return eb
+    .selectFrom('album_user')
+    .select('userId as ownerId')
+    .whereRef('album.id', '=', 'album_user.albumId')
+    .where('album_user.role', '=', sql.lit(AlbumUserRole.Owner))
+    .limit(sql.lit(1))
+    .as('ownerId');
+};
+
 const withOwner = (eb: ExpressionBuilder<DB, 'album'>) => {
-  return jsonObjectFrom(eb.selectFrom('user').select(columns.user).whereRef('user.id', '=', 'album.ownerId'))
+  return jsonObjectFrom(
+    eb
+      .selectFrom('user')
+      .select(columns.user)
+      .innerJoin('album_user', (join) =>
+        join.onRef('album.id', '=', 'album_user.albumId').on('album_user.role', '=', sql.lit(AlbumUserRole.Owner)),
+      )
+      .whereRef('user.id', '=', 'album_user.userId'),
+  )
     .$notNull()
     .as('owner');
 };
@@ -87,12 +106,46 @@ export class AlbumRepository {
   @GenerateSql({ params: [DummyValue.UUID, { withAssets: true }] })
   async getById(id: string, options: AlbumInfoOptions) {
     return this.db
+      .with('users', (qb) => qb.selectFrom('album_user').selectAll().where('album_user.albumId', '=', id))
       .selectFrom('album')
       .selectAll('album')
       .where('album.id', '=', id)
       .where('album.deletedAt', 'is', null)
-      .select(withOwner)
-      .select(withAlbumUsers)
+      .select((eb) =>
+        eb
+          .selectFrom('users')
+          .select('userId as ownerId')
+          .where('users.role', '=', sql.lit(AlbumUserRole.Owner))
+          .limit(sql.lit(1))
+          .as('ownerId'),
+      )
+      .$narrowType<{ ownerId: NotNull }>()
+      .select((eb) =>
+        jsonObjectFrom(
+          eb
+            .selectFrom('user')
+            .select(columns.user)
+            .innerJoin('users', (join) =>
+              join.onRef('users.userId', '=', 'user.id').on('users.role', '=', sql.lit(AlbumUserRole.Owner)),
+            ),
+        )
+          .$notNull()
+          .as('owner'),
+      )
+      .select((eb) =>
+        jsonArrayFrom(
+          eb
+            .selectFrom('users')
+            .select('users.role')
+            .select((eb) =>
+              jsonObjectFrom(eb.selectFrom('user').select(columns.user).whereRef('user.id', '=', 'users.userId'))
+                .$notNull()
+                .as('user'),
+            ),
+        )
+          .$notNull()
+          .as('albumUsers'),
+      )
       .select(withSharedLink)
       .$if(options.withAssets, (eb) => eb.select(withAssets))
       .$narrowType<{ assets: NotNull }>()
@@ -106,19 +159,18 @@ export class AlbumRepository {
       .selectAll('album')
       .innerJoin('album_asset', 'album_asset.albumId', 'album.id')
       .where((eb) =>
-        eb.or([
-          eb('album.ownerId', '=', ownerId),
-          eb.exists(
-            eb
-              .selectFrom('album_user')
-              .whereRef('album_user.albumId', '=', 'album.id')
-              .where('album_user.userId', '=', ownerId),
-          ),
-        ]),
+        eb.exists(
+          eb
+            .selectFrom('album_user')
+            .whereRef('album_user.albumId', '=', 'album.id')
+            .where('album_user.userId', '=', ownerId),
+        ),
       )
       .where('album_asset.assetId', '=', assetId)
       .where('album.deletedAt', 'is', null)
       .orderBy('album.createdAt', 'desc')
+      .select(withOwnerId)
+      .$narrowType<{ ownerId: NotNull }>()
       .select(withOwner)
       .select(withAlbumUsers)
       .orderBy('album.createdAt', 'desc')
@@ -137,15 +189,12 @@ export class AlbumRepository {
       .select('album.id')
       .innerJoin('album_asset', 'album_asset.albumId', 'album.id')
       .where((eb) =>
-        eb.or([
-          eb('album.ownerId', '=', ownerId),
-          eb.exists(
-            eb
-              .selectFrom('album_user')
-              .whereRef('album_user.albumId', '=', 'album.id')
-              .where('album_user.userId', '=', ownerId),
-          ),
-        ]),
+        eb.exists(
+          eb
+            .selectFrom('album_user')
+            .whereRef('album_user.albumId', '=', 'album.id')
+            .where('album_user.userId', '=', ownerId),
+        ),
       )
       .where('album_asset.assetId', 'in', assetIds)
       .where('album.deletedAt', 'is', null)
@@ -194,10 +243,11 @@ export class AlbumRepository {
     return this.db
       .selectFrom('album')
       .selectAll('album')
+      .select((qb) => qb.val(ownerId).as('ownerId'))
       .select(withOwner)
       .select(withAlbumUsers)
       .select(withSharedLink)
-      .where('album.ownerId', '=', ownerId)
+      .where(isAlbumOwned(ownerId))
       .where('album.deletedAt', 'is', null)
       .orderBy('album.createdAt', 'desc')
       .execute();
@@ -217,8 +267,32 @@ export class AlbumRepository {
             eb
               .selectFrom('album_user')
               .whereRef('album_user.albumId', '=', 'album.id')
-              .where((eb) => eb.or([eb('album.ownerId', '=', ownerId), eb('album_user.userId', '=', ownerId)])),
+              .where((eb) =>
+                eb.and([
+                  eb('album_user.userId', '=', ownerId),
+                  eb('album_user.role', '!=', sql.lit(AlbumUserRole.Owner)),
+                ]),
+              ),
           ),
+          eb.and([
+            eb.exists(
+              eb
+                .selectFrom('album_user')
+                .whereRef('album_user.albumId', '=', 'album.id')
+                .where((eb) =>
+                  eb.and([
+                    eb('album_user.userId', '=', ownerId),
+                    eb('album_user.role', '=', sql.lit(AlbumUserRole.Owner)),
+                  ]),
+                ),
+            ),
+            eb.exists(
+              eb
+                .selectFrom('album_user')
+                .whereRef('album_user.albumId', '=', 'album.id')
+                .where('album_user.role', '!=', sql.lit(AlbumUserRole.Owner)),
+            ),
+          ]),
           eb.exists(
             eb
               .selectFrom('shared_link')
@@ -228,6 +302,8 @@ export class AlbumRepository {
         ]),
       )
       .where('album.deletedAt', 'is', null)
+      .select(withOwnerId)
+      .$narrowType<{ ownerId: NotNull }>()
       .select(withAlbumUsers)
       .select(withOwner)
       .select(withSharedLink)
@@ -243,25 +319,43 @@ export class AlbumRepository {
     return this.db
       .selectFrom('album')
       .selectAll('album')
-      .where('album.ownerId', '=', ownerId)
       .where('album.deletedAt', 'is', null)
-      .where((eb) => eb.not(eb.exists(eb.selectFrom('album_user').whereRef('album_user.albumId', '=', 'album.id'))))
+      .where((eb) =>
+        eb.and([
+          eb.not(
+            eb.exists(
+              eb
+                .selectFrom('album_user')
+                .whereRef('album_user.albumId', '=', 'album.id')
+                .where('album_user.role', '!=', sql.lit(AlbumUserRole.Owner)),
+            ),
+          ),
+          eb.exists(
+            eb
+              .selectFrom('album_user')
+              .whereRef('album_user.albumId', '=', 'album.id')
+              .where('album_user.userId', '=', ownerId),
+          ),
+        ]),
+      )
       .where((eb) => eb.not(eb.exists(eb.selectFrom('shared_link').whereRef('shared_link.albumId', '=', 'album.id'))))
+      .select(withOwnerId)
+      .$narrowType<{ ownerId: NotNull }>()
       .select(withOwner)
       .orderBy('album.createdAt', 'desc')
       .execute();
   }
 
   async restoreAll(userId: string): Promise<void> {
-    await this.db.updateTable('album').set({ deletedAt: null }).where('ownerId', '=', userId).execute();
+    await this.db.updateTable('album').set({ deletedAt: null }).where(isAlbumOwned(userId)).execute();
   }
 
   async softDeleteAll(userId: string): Promise<void> {
-    await this.db.updateTable('album').set({ deletedAt: new Date() }).where('ownerId', '=', userId).execute();
+    await this.db.updateTable('album').set({ deletedAt: new Date() }).where(isAlbumOwned(userId)).execute();
   }
 
   async deleteAll(userId: string): Promise<void> {
-    await this.db.deleteFrom('album').where('ownerId', '=', userId).execute();
+    await this.db.deleteFrom('album').where(isAlbumOwned(userId)).execute();
   }
 
   @GenerateSql({ params: [[DummyValue.UUID]] })
@@ -335,10 +429,11 @@ export class AlbumRepository {
         .selectFrom('album')
         .selectAll('album')
         .where('id', '=', newAlbum.id)
+        .select(withOwnerId)
         .select(withOwner)
         .select(withAssets)
         .select(withAlbumUsers)
-        .$narrowType<{ assets: NotNull }>()
+        .$narrowType<{ assets: NotNull; ownerId: NotNull }>()
         .executeTakeFirstOrThrow();
     });
   }
@@ -349,6 +444,8 @@ export class AlbumRepository {
       .set(album)
       .where('id', '=', id)
       .returningAll('album')
+      .returning(withOwnerId)
+      .$narrowType<{ ownerId: NotNull }>()
       .returning(withOwner)
       .returning(withSharedLink)
       .returning(withAlbumUsers)
@@ -402,7 +499,7 @@ export class AlbumRepository {
         albumThumbnailAssetId: this.updateThumbnailBuilder(eb)
           .select('album_asset.assetId')
           .orderBy('asset.fileCreatedAt', 'desc')
-          .limit(1),
+          .limit(sql.lit(1)),
       }))
       .where((eb) =>
         eb.or([

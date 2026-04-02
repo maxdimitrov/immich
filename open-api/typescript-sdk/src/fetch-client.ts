@@ -6905,6 +6905,7 @@ export enum AssetVisibility {
 }
 export enum AlbumUserRole {
     Editor = "editor",
+    Owner = "owner",
     Viewer = "viewer"
 }
 export enum SourceType {

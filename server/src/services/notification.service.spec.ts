@@ -435,7 +435,7 @@ describe(NotificationService.name, () => {
     });
 
     it('should skip if owner could not be found', async () => {
-      mocks.album.getById.mockResolvedValue(getForAlbum(AlbumFactory.create({ ownerId: 'non-existent' })));
+      mocks.album.getById.mockResolvedValue(getForAlbum(AlbumFactory.from().owner({ id: 'non-existent' }).build()));
 
       await expect(sut.handleAlbumUpdate({ id: '', recipientId: '1' })).resolves.toBe(JobStatus.Skipped);
       expect(mocks.systemMetadata.get).not.toHaveBeenCalled();
