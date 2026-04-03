@@ -18,7 +18,7 @@ import {
 } from 'class-validator';
 import { HistoryBuilder, Property } from 'src/decorators';
 import { BulkIdsDto } from 'src/dtos/asset-ids.response.dto';
-import { AssetType, AssetVisibility } from 'src/enum';
+import { AssetType, AssetVisibility, ImageFormat } from 'src/enum';
 import { AssetStats } from 'src/repositories/asset.repository';
 import { IsNotSiblingOf, Optional, ValidateBoolean, ValidateEnum, ValidateString, ValidateUUID } from 'src/validation';
 
@@ -258,6 +258,9 @@ export class AssetCopyDto {
 export class AssetDownloadOriginalDto {
   @ValidateBoolean({ optional: true, description: 'Return edited asset if available', default: false })
   edited?: boolean;
+
+  @ValidateEnum({ enum: ImageFormat, name: 'ImageFormat', description: 'Convert image to specified format', optional: true })
+  format?: ImageFormat;
 }
 
 export const mapStats = (stats: AssetStats): AssetStatsResponseDto => {

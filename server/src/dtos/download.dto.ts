@@ -1,7 +1,8 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { IsInt, IsPositive } from 'class-validator';
 import { AssetIdsDto } from 'src/dtos/asset.dto';
-import { Optional, ValidateBoolean, ValidateUUID } from 'src/validation';
+import { ImageFormat } from 'src/enum';
+import { Optional, ValidateBoolean, ValidateEnum, ValidateUUID } from 'src/validation';
 
 export class DownloadInfoDto {
   @ValidateUUID({ each: true, optional: true, description: 'Asset IDs to download' })
@@ -37,4 +38,7 @@ export class DownloadArchiveInfo {
 export class DownloadArchiveDto extends AssetIdsDto {
   @ValidateBoolean({ optional: true, description: 'Download edited asset if available' })
   edited?: boolean;
+
+  @ValidateEnum({ enum: ImageFormat, name: 'ImageFormat', description: 'Convert non-web-friendly images to specified format', optional: true })
+  format?: ImageFormat;
 }

@@ -3,10 +3,12 @@ import { parse } from 'node:path';
 import { StorageCore } from 'src/cores/storage.core';
 import { AuthDto } from 'src/dtos/auth.dto';
 import { DownloadArchiveDto, DownloadArchiveInfo, DownloadInfoDto, DownloadResponseDto } from 'src/dtos/download.dto';
-import { Permission } from 'src/enum';
+import { Colorspace, Permission } from 'src/enum';
 import { ImmichReadStream } from 'src/repositories/storage.repository';
 import { BaseService } from 'src/services/base.service';
 import { HumanReadableSize } from 'src/utils/bytes';
+import { getFileNameWithoutExtension } from 'src/utils/file';
+import { mimeTypes } from 'src/utils/mime-types';
 import { getPreferences } from 'src/utils/preferences';
 
 @Injectable()
@@ -87,6 +89,18 @@ export class DownloadService extends BaseService {
     const assetMap = new Map(assets.map((asset) => [asset.id, asset]));
     const paths: Record<string, number> = {};
 
+    let convertOptions;
+    if (dto.format) {
+      const { image } = await this.getConfig({ withCache: true });
+      convertOptions = {
+        format: dto.format,
+        quality: image.fullsize.quality,
+        progressive: image.fullsize.progressive,
+        colorspace: Colorspace.Srgb,
+        processInvalidImages: false,
+      };
+    }
+
     for (const assetId of dto.assetIds) {
       const asset = assetMap.get(assetId);
       if (!asset) {
@@ -103,7 +117,7 @@ export class DownloadService extends BaseService {
         filename = `${parsedFilename.name}+${count}${parsedFilename.ext}`;
       }
 
-      let realpath = dto.edited && editedPath ? editedPath : originalPath;
+      let realpath = dto.edited && editedPath && !convertOptions ? editedPath : originalPath;
 
       try {
         realpath = await this.storageRepository.realpath(realpath);
@@ -111,7 +125,19 @@ export class DownloadService extends BaseService {
         this.logger.warn('Unable to resolve realpath', { originalPath });
       }
 
-      zip.addFile(realpath, filename);
+      if (convertOptions && mimeTypes.isImage(realpath) && !mimeTypes.isWebSupportedImage(realpath)) {
+        try {
+          const buffer = await this.mediaRepository.convertImageToBuffer(realpath, convertOptions);
+          const formatExtension = mimeTypes.toExtension(`image/${convertOptions.format}`) ?? `.${convertOptions.format}`;
+          const convertedFilename = getFileNameWithoutExtension(filename) + formatExtension;
+          zip.addBuffer(buffer, convertedFilename);
+        } catch (error) {
+          this.logger.warn(`Failed to convert ${realpath}, adding original`, { error });
+          zip.addFile(realpath, filename);
+        }
+      } else {
+        zip.addFile(realpath, filename);
+      }
     }
 
     void zip.finalize();

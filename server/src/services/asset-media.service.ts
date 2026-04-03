@@ -1,4 +1,5 @@
 import { BadRequestException, Injectable, InternalServerErrorException, NotFoundException } from '@nestjs/common';
+import { tmpdir } from 'node:os';
 import { extname } from 'node:path';
 import sanitize from 'sanitize-filename';
 import { StorageCore } from 'src/cores/storage.core';
@@ -28,6 +29,7 @@ import {
   AssetVisibility,
   CacheControl,
   ChecksumAlgorithm,
+  Colorspace,
   JobName,
   Permission,
   StorageFolder,
@@ -210,7 +212,29 @@ export class AssetMediaService extends BaseService {
       dto.edited ?? false,
     );
 
-    const path = editedPath ?? originalPath!;
+    const path = dto.format ? originalPath! : (editedPath ?? originalPath!);
+
+    if (dto.format && mimeTypes.isImage(path) && !mimeTypes.isWebSupportedImage(path)) {
+      const { image } = await this.getConfig({ withCache: true });
+      const tempPath = StorageCore.getTempPathInDir(tmpdir());
+      await this.mediaRepository.generateThumbnail(path, {
+        format: dto.format,
+        quality: image.fullsize.quality,
+        progressive: image.fullsize.progressive,
+        colorspace: Colorspace.Srgb,
+        processInvalidImages: false,
+      }, tempPath);
+
+      const formatExtension = mimeTypes.toExtension(`image/${dto.format}`) ?? `.${dto.format}`;
+
+      return new ImmichFileResponse({
+        path: tempPath,
+        fileName: getFileNameWithoutExtension(originalFileName) + formatExtension,
+        contentType: `image/${dto.format}`,
+        cacheControl: CacheControl.PrivateWithoutCache,
+        cleanupPath: tempPath,
+      });
+    }
 
     return new ImmichFileResponse({
       path,
