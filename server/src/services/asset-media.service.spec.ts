@@ -9,7 +9,7 @@ import { AssetMediaStatus, AssetRejectReason, AssetUploadAction } from 'src/dtos
 import { AssetMediaCreateDto, AssetMediaSize, UploadFieldName } from 'src/dtos/asset-media.dto';
 import { MapAsset } from 'src/dtos/asset-response.dto';
 import { AssetEditAction } from 'src/dtos/editing.dto';
-import { AssetFileType, AssetType, AssetVisibility, CacheControl, JobName } from 'src/enum';
+import { AssetFileType, AssetType, AssetVisibility, CacheControl, ImageFormat, JobName } from 'src/enum';
 import { AuthRequest } from 'src/middleware/auth.guard';
 import { AssetMediaService } from 'src/services/asset-media.service';
 import { UploadBody } from 'src/types';
@@ -565,6 +565,78 @@ describe(AssetMediaService.name, () => {
           cacheControl: CacheControl.PrivateWithCache,
         }),
       );
+    });
+
+    it('should convert HEIC to JPEG when format is specified', async () => {
+      const asset = AssetFactory.create({
+        originalFileName: 'IMG_1234.heic',
+        originalPath: '/data/library/IMG_1234.heic',
+      });
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([asset.id]));
+      mocks.asset.getForOriginal.mockResolvedValue(asset);
+      mocks.systemMetadata.get.mockResolvedValue({});
+      mocks.media.generateThumbnail.mockResolvedValue(undefined);
+
+      const result = await sut.downloadOriginal(authStub.admin, asset.id, { format: ImageFormat.Jpeg });
+
+      expect(mocks.media.generateThumbnail).toHaveBeenCalledWith(
+        '/data/library/IMG_1234.heic',
+        expect.objectContaining({ format: ImageFormat.Jpeg }),
+        expect.any(String),
+      );
+      expect(result.contentType).toBe('image/jpeg');
+      expect(result.fileName).toBe('IMG_1234.jpg');
+      expect(result.cleanupPath).toBeDefined();
+    });
+
+    it('should skip conversion for web-friendly images even when format is specified', async () => {
+      const asset = AssetFactory.create();
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([asset.id]));
+      mocks.asset.getForOriginal.mockResolvedValue(asset);
+
+      const result = await sut.downloadOriginal(authStub.admin, asset.id, { format: ImageFormat.Jpeg });
+
+      expect(mocks.media.generateThumbnail).not.toHaveBeenCalled();
+      expect(result.contentType).toBe('image/jpeg');
+      expect(result.cleanupPath).toBeUndefined();
+    });
+
+    it('should return original when no format is specified', async () => {
+      const asset = AssetFactory.create({
+        originalFileName: 'IMG_1234.heic',
+        originalPath: '/data/library/IMG_1234.heic',
+      });
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([asset.id]));
+      mocks.asset.getForOriginal.mockResolvedValue(asset);
+
+      const result = await sut.downloadOriginal(authStub.admin, asset.id, {});
+
+      expect(mocks.media.generateThumbnail).not.toHaveBeenCalled();
+      expect(result.contentType).toBe('image/heic');
+    });
+
+    it('should use original path instead of edited path when format is specified', async () => {
+      const asset = AssetFactory.create({
+        originalFileName: 'IMG_1234.heic',
+        originalPath: '/data/library/IMG_1234.heic',
+      });
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([asset.id]));
+      mocks.asset.getForOriginal.mockResolvedValue({
+        ...asset,
+        editedPath: '/data/thumbs/fullsize_edited.jpeg',
+      });
+      mocks.systemMetadata.get.mockResolvedValue({});
+      mocks.media.generateThumbnail.mockResolvedValue(undefined);
+
+      const result = await sut.downloadOriginal(authStub.admin, asset.id, { edited: true, format: ImageFormat.Jpeg });
+
+      expect(mocks.media.generateThumbnail).toHaveBeenCalledWith(
+        '/data/library/IMG_1234.heic',
+        expect.objectContaining({ format: ImageFormat.Jpeg }),
+        expect.any(String),
+      );
+      expect(result.contentType).toBe('image/jpeg');
+      expect(result.fileName).toBe('IMG_1234.jpg');
     });
   });
 

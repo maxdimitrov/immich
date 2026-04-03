@@ -1,6 +1,7 @@
 import { BadRequestException } from '@nestjs/common';
 import { Readable } from 'node:stream';
 import { DownloadResponseDto } from 'src/dtos/download.dto';
+import { ImageFormat } from 'src/enum';
 import { DownloadService } from 'src/services/download.service';
 import { AssetFactory } from 'test/factories/asset.factory';
 import { authStub } from 'test/fixtures/auth.stub';
@@ -33,6 +34,7 @@ describe(DownloadService.name, () => {
     it('should skip asset ids that could not be found', async () => {
       const archiveMock = {
         addFile: vitest.fn(),
+        addBuffer: vitest.fn(),
         finalize: vitest.fn(),
         stream: new Readable(),
       };
@@ -53,6 +55,7 @@ describe(DownloadService.name, () => {
     it('should log a warning if the original path could not be resolved', async () => {
       const archiveMock = {
         addFile: vitest.fn(),
+        addBuffer: vitest.fn(),
         finalize: vitest.fn(),
         stream: new Readable(),
       };
@@ -78,6 +81,7 @@ describe(DownloadService.name, () => {
     it('should download an archive', async () => {
       const archiveMock = {
         addFile: vitest.fn(),
+        addBuffer: vitest.fn(),
         finalize: vitest.fn(),
         stream: new Readable(),
       };
@@ -101,6 +105,7 @@ describe(DownloadService.name, () => {
     it('should handle duplicate file names', async () => {
       const archiveMock = {
         addFile: vitest.fn(),
+        addBuffer: vitest.fn(),
         finalize: vitest.fn(),
         stream: new Readable(),
       };
@@ -123,6 +128,7 @@ describe(DownloadService.name, () => {
     it('should be deterministic', async () => {
       const archiveMock = {
         addFile: vitest.fn(),
+        addBuffer: vitest.fn(),
         finalize: vitest.fn(),
         stream: new Readable(),
       };
@@ -145,6 +151,7 @@ describe(DownloadService.name, () => {
     it('should resolve symlinks', async () => {
       const archiveMock = {
         addFile: vitest.fn(),
+        addBuffer: vitest.fn(),
         finalize: vitest.fn(),
         stream: new Readable(),
       };
@@ -160,6 +167,77 @@ describe(DownloadService.name, () => {
       });
 
       expect(archiveMock.addFile).toHaveBeenCalledWith('/path/to/realpath.jpg', asset.originalFileName);
+    });
+
+    it('should convert non-web-friendly images when format is specified', async () => {
+      const archiveMock = {
+        addFile: vitest.fn(),
+        addBuffer: vitest.fn(),
+        finalize: vitest.fn(),
+        stream: new Readable(),
+      };
+
+      const heicAsset = AssetFactory.create({
+        originalFileName: 'IMG_1234.heic',
+        originalPath: '/data/library/IMG_1234.heic',
+      });
+      const jpgAsset = AssetFactory.create({
+        originalFileName: 'IMG_5678.jpg',
+        originalPath: '/data/library/IMG_5678.jpg',
+      });
+
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([heicAsset.id, jpgAsset.id]));
+      mocks.asset.getForOriginals.mockResolvedValue([heicAsset, jpgAsset]);
+      mocks.storage.createZipStream.mockReturnValue(archiveMock);
+      mocks.systemMetadata.get.mockResolvedValue({});
+      mocks.media.convertImageToBuffer.mockResolvedValue(Buffer.from('converted'));
+
+      await expect(
+        sut.downloadArchive(authStub.admin, {
+          assetIds: [heicAsset.id, jpgAsset.id],
+          format: ImageFormat.Jpeg,
+        }),
+      ).resolves.toEqual({ stream: archiveMock.stream });
+
+      expect(mocks.media.convertImageToBuffer).toHaveBeenCalledTimes(1);
+      expect(archiveMock.addBuffer).toHaveBeenCalledWith(Buffer.from('converted'), 'IMG_1234.jpg');
+      expect(archiveMock.addFile).toHaveBeenCalledWith('/data/library/IMG_5678.jpg', 'IMG_5678.jpg');
+    });
+
+    it('should use original path instead of edited path when format is specified', async () => {
+      const archiveMock = {
+        addFile: vitest.fn(),
+        addBuffer: vitest.fn(),
+        finalize: vitest.fn(),
+        stream: new Readable(),
+      };
+
+      const heicAsset = AssetFactory.create({
+        originalFileName: 'IMG_1234.heic',
+        originalPath: '/data/library/IMG_1234.heic',
+        editedPath: '/data/thumbs/fullsize_edited.jpeg',
+      });
+
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([heicAsset.id]));
+      mocks.asset.getForOriginals.mockResolvedValue([heicAsset]);
+      mocks.storage.createZipStream.mockReturnValue(archiveMock);
+      mocks.systemMetadata.get.mockResolvedValue({});
+      mocks.media.convertImageToBuffer.mockResolvedValue(Buffer.from('converted'));
+
+      await expect(
+        sut.downloadArchive(authStub.admin, {
+          assetIds: [heicAsset.id],
+          edited: true,
+          format: ImageFormat.Jpeg,
+        }),
+      ).resolves.toEqual({ stream: archiveMock.stream });
+
+      expect(mocks.media.convertImageToBuffer).toHaveBeenCalledTimes(1);
+      expect(mocks.media.convertImageToBuffer).toHaveBeenCalledWith(
+        '/data/library/IMG_1234.heic',
+        expect.objectContaining({ format: ImageFormat.Jpeg }),
+      );
+      expect(archiveMock.addBuffer).toHaveBeenCalledWith(Buffer.from('converted'), 'IMG_1234.jpg');
     });
   });
 
