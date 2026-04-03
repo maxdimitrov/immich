@@ -1,6 +1,6 @@
 import { HttpException, StreamableFile } from '@nestjs/common';
 import { NextFunction, Response } from 'express';
-import { access, constants } from 'node:fs/promises';
+import { access, constants, unlink } from 'node:fs/promises';
 import { basename, extname } from 'node:path';
 import { promisify } from 'node:util';
 import { CacheControl } from 'src/enum';
@@ -25,6 +25,7 @@ export class ImmichFileResponse {
   public readonly contentType!: string;
   public readonly cacheControl!: CacheControl;
   public readonly fileName?: string;
+  public readonly cleanupPath?: string;
 
   constructor(response: ImmichFileResponse) {
     Object.assign(this, response);
@@ -50,8 +51,11 @@ export const sendFile = async (
   const _sendFile = (path: string, options: SendFileOptions) =>
     promisify<string, SendFileOptions>(res.sendFile).bind(res)(path, options);
 
+  let cleanupPath: string | undefined;
+
   try {
     const file = await handler();
+    cleanupPath = file.cleanupPath;
     const cacheControlHeader = cacheControlHeaders[file.cacheControl];
     if (cacheControlHeader) {
       // set the header to Cache-Control
@@ -79,6 +83,10 @@ export const sendFile = async (
 
     res.header('Cache-Control', 'none');
     next(error);
+  } finally {
+    if (cleanupPath) {
+      await unlink(cleanupPath).catch(() => {});
+    }
   }
 };
 
