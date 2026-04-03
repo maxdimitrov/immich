@@ -101,7 +101,11 @@ export const downloadUrl = (url: string, filename: string) => {
   URL.revokeObjectURL(url);
 };
 
-export const downloadArchive = async (fileName: string, options: Omit<DownloadInfoDto, 'archiveSize'>) => {
+export const downloadArchive = async (
+  fileName: string,
+  options: Omit<DownloadInfoDto, 'archiveSize'>,
+  { format }: { format?: string } = {},
+) => {
   const $preferences = get<UserPreferencesResponseDto | undefined>(preferences);
   const dto = { ...options, archiveSize: $preferences?.download.archiveSize };
 
@@ -135,7 +139,7 @@ export const downloadArchive = async (fileName: string, options: Omit<DownloadIn
       const { data } = await downloadRequest({
         method: 'POST',
         url: getBaseUrl() + '/download/archive' + (queryParams ? `?${queryParams}` : ''),
-        data: { assetIds: archive.assetIds, edited: true },
+        data: { assetIds: archive.assetIds, edited: true, format },
         signal: abort.signal,
         onDownloadProgress: (event) => downloadManager.update(downloadKey, event.loaded),
       });

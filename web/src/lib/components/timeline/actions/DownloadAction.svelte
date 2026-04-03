@@ -5,7 +5,7 @@
   import { assetMultiSelectManager } from '$lib/managers/asset-multi-select-manager.svelte';
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import { handleDownloadAsset } from '$lib/services/asset.service';
-  import { downloadArchive } from '$lib/utils/asset-utils';
+  import { downloadArchive, isWebCompatibleImage } from '$lib/utils/asset-utils';
   import { getAssetInfo } from '@immich/sdk';
   import { IconButton } from '@immich/ui';
   import { mdiDownload } from '@mdi/js';
@@ -23,12 +23,13 @@
     if (assets.length === 1) {
       assetMultiSelectManager.clear();
       let asset = await getAssetInfo({ ...authManager.params, id: assets[0].id });
-      await handleDownloadAsset(asset, { edited: true });
+      const needsConversion = asset.type === 'IMAGE' && !isWebCompatibleImage(asset);
+      await handleDownloadAsset(asset, { edited: true, format: needsConversion ? 'jpeg' : undefined });
       return;
     }
 
     assetMultiSelectManager.clear();
-    await downloadArchive(filename, { assetIds: assets.map((asset) => asset.id) });
+    await downloadArchive(filename, { assetIds: assets.map((asset) => asset.id) }, { format: 'jpeg' });
   };
 </script>
 

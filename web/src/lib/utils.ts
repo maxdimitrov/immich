@@ -186,7 +186,7 @@ const createUrl = (path: string, parameters?: Record<string, unknown>) => {
   return getBaseUrl() + url.pathname + url.search + url.hash;
 };
 
-type AssetUrlOptions = { id: string; cacheKey?: string | null; edited?: boolean; size?: AssetMediaSize };
+type AssetUrlOptions = { id: string; cacheKey?: string | null; edited?: boolean; size?: AssetMediaSize; format?: string };
 
 export const getAssetUrl = ({
   asset,
@@ -231,10 +231,10 @@ export const targetImageSize = (asset: AssetResponseDto, forceOriginal: boolean)
 };
 
 export const getAssetMediaUrl = (options: AssetUrlOptions) => {
-  const { id, size, cacheKey: c, edited = true } = options;
+  const { id, size, cacheKey: c, edited = true, format } = options;
   const isOriginal = size === AssetMediaSize.Original;
   const path = isOriginal ? getAssetOriginalPath(id) : getAssetThumbnailPath(id);
-  return createUrl(path, { ...authManager.params, size: isOriginal ? undefined : size, c, edited });
+  return createUrl(path, { ...authManager.params, size: isOriginal ? undefined : size, c, edited, format });
 };
 
 export const getAssetPlaybackUrl = (options: AssetUrlOptions) => {

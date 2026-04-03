@@ -8,7 +8,7 @@ import AssetTagModal from '$lib/modals/AssetTagModal.svelte';
 import SharedLinkCreateModal from '$lib/modals/SharedLinkCreateModal.svelte';
 import { user as authUser, preferences } from '$lib/stores/user.store';
 import { getAssetMediaUrl, getSharedLink, sleep } from '$lib/utils';
-import { downloadUrl } from '$lib/utils/asset-utils';
+import { downloadUrl, isWebCompatibleImage } from '$lib/utils/asset-utils';
 import { handleError } from '$lib/utils/handle-error';
 import { getFormatter } from '$lib/utils/i18n';
 import {
@@ -107,20 +107,22 @@ export const getAssetActions = ($t: MessageFormatter, asset: AssetResponseDto) =
     onAction: () => modalManager.show(SharedLinkCreateModal, { assetIds: [asset.id] }),
   };
 
+  const needsConversion = asset.type === AssetTypeEnum.Image && !isWebCompatibleImage(asset);
+
   const Download: ActionItem = {
     title: $t('download'),
     icon: mdiDownload,
     shortcuts: { key: 'd', shift: true },
     type: $t('assets'),
     $if: () => !!currentAuthUser,
-    onAction: () => handleDownloadAsset(asset, { edited: true }),
+    onAction: () => handleDownloadAsset(asset, { edited: true, format: needsConversion ? 'jpeg' : undefined }),
   };
 
   const DownloadOriginal: ActionItem = {
     title: $t('download_original'),
     icon: mdiDownloadBox,
     type: $t('assets'),
-    $if: () => !!currentAuthUser && asset.isEdited,
+    $if: () => !!currentAuthUser && (asset.isEdited || needsConversion),
     onAction: () => handleDownloadAsset(asset, { edited: false }),
   };
 
@@ -298,7 +300,10 @@ export const getAssetActions = ($t: MessageFormatter, asset: AssetResponseDto) =
   };
 };
 
-export const handleDownloadAsset = async (asset: AssetResponseDto, { edited }: { edited: boolean }) => {
+export const handleDownloadAsset = async (
+  asset: AssetResponseDto,
+  { edited, format }: { edited: boolean; format?: string },
+) => {
   const $t = await getFormatter();
 
   const assets = [
@@ -336,11 +341,15 @@ export const handleDownloadAsset = async (asset: AssetResponseDto, { edited }: {
       await sleep(500);
     }
 
+    const downloadFilename = format
+      ? filename.replace(/\.[^.]+$/, `.${format}`)
+      : filename;
+
     try {
-      toastManager.primary($t('downloading_asset_filename', { values: { filename } }));
-      downloadUrl(getAssetMediaUrl({ id, size: AssetMediaSize.Original, edited, cacheKey }), filename);
+      toastManager.primary($t('downloading_asset_filename', { values: { filename: downloadFilename } }));
+      downloadUrl(getAssetMediaUrl({ id, size: AssetMediaSize.Original, edited, cacheKey, format }), downloadFilename);
     } catch (error) {
-      handleError(error, $t('errors.error_downloading', { values: { filename } }));
+      handleError(error, $t('errors.error_downloading', { values: { filename: downloadFilename } }));
     }
   }
 };
