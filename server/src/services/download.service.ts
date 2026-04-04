@@ -117,6 +117,8 @@ export class DownloadService extends BaseService {
         filename = `${parsedFilename.name}+${count}${parsedFilename.ext}`;
       }
 
+      // When format conversion is requested, always use the original path (not the edited version)
+      // since we're converting from the source format
       let realpath = dto.edited && editedPath && !convertOptions ? editedPath : originalPath;
 
       try {

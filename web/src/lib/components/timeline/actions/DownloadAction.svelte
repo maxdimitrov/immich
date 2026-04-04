@@ -28,8 +28,9 @@
       return;
     }
 
+    const hasImages = assets.some((asset) => asset.isImage);
     assetMultiSelectManager.clear();
-    await downloadArchive(filename, { assetIds: assets.map((asset) => asset.id) }, { format: 'jpeg' });
+    await downloadArchive(filename, { assetIds: assets.map((asset) => asset.id) }, { format: hasImages ? 'jpeg' : undefined });
   };
 </script>
 

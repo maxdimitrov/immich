@@ -212,6 +212,8 @@ export class AssetMediaService extends BaseService {
       dto.edited ?? false,
     );
 
+    // When format conversion is requested, always use the original path (not the edited version)
+    // since we're converting from the source format
     const path = dto.format ? originalPath! : (editedPath ?? originalPath!);
 
     if (dto.format && mimeTypes.isImage(path) && !mimeTypes.isWebSupportedImage(path)) {
